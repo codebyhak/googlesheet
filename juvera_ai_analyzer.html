@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JUVERA 매출 분석 AI</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Google API Client Library -->
+    <script src="https://apis.google.com/js/api.js"></script>
+    <!-- Google Identity Services Library -->
+    <script src="https://accounts.google.com/gsi/client"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans KR', sans-serif;
+            background-color: #f3f4f6;
+        }
+        /* 스크롤바 스타일링 */
+        #chat-window::-webkit-scrollbar {
+            width: 6px;
+        }
+        #chat-window::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        #chat-window::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+        #chat-window::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        .chat-bubble-user {
+            background-color: #3b82f6; /* blue-500 */
+            color: white;
+        }
+        .chat-bubble-ai {
+            background-color: #ffffff; /* white */
+            color: #1f2937; /* gray-800 */
+            border: 1px solid #e5e7eb; /* gray-200 */
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-4xl bg-white shadow-2xl rounded-2xl flex flex-col lg:flex-row overflow-hidden" style="height: 80vh; min-height: 600px;">
+
+        <!-- 1. 사이드바 (데이터 연결) -->
+        <div class="w-full lg:w-1/3 bg-gray-50 border-b lg:border-r border-gray-200 p-6 flex flex-col">
+            <h1 class="text-2xl font-bold text-gray-800 mb-6">매출 분석 AI</h1>
+            
+            <!-- 1-1. 인증 단계 -->
+            <div id="auth-section">
+                <p class="text-gray-600 mb-4 text-sm">데이터 분석을 위해 Google Sheets 접근 권한이 필요합니다.</p>
+                <button id="authorize_button" class="w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow hover:bg-blue-700 transition duration-300">
+                    Google 계정으로 로그인
+                </button>
+                <button id="signout_button" class="w-full bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg mt-2 hover:bg-gray-300 transition duration-300 hidden">
+                    로그아웃
+                </button>
+            </div>
+
+            <!-- 1-2. 데이터 입력 단계 (인증 후 표시) -->
+            <div id="data-section" class="hidden mt-6 space-y-4">
+                <div>
+                    <label for="sheet-id" class="block text-sm font-medium text-gray-700 mb-1">Google Sheet ID</label>
+                    <input type="text" id="sheet-id" class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="시트 URL의 /d/.../ 부분">
+                    <p class="text-xs text-gray-500 mt-1">예: .../d/1aBcD_.../edit</p>
+                </div>
+                <div>
+                    <label for="sheet-range" class="block text-sm font-medium text-gray-700 mb-1">시트 이름 (범위)</label>
+                    <input type="text" id="sheet-range" class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="예: 'Sheet1' 또는 'Sheet1!A1:D10'">
+                    <p class="text-xs text-gray-500 mt-1">기본값: 'Sheet1'</small>
+                </div>
+                <button id="fetch_button" class="w-full bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow hover:bg-green-700 transition duration-300">
+                    데이터 불러오기
+                </button>
+            </div>
+
+            <!-- 1-3. 상태 메시지 -->
+            <div id="status-message" class="mt-auto pt-4 text-sm text-gray-600">
+                <p>Google 계정으로 로그인해주세요.</p>
+            </div>
+        </div>
+
+        <!-- 2. 채팅 인터페이스 -->
+        <div class="w-full lg:w-2/3 flex flex-col bg-gray-100 h-full">
+            
+            <!-- 2-1. 채팅창 -->
+            <div id="chat-window" class="flex-1 p-6 space-y-4 overflow-y-auto">
+                <!-- AI 기본 인사 -->
+                <div class="flex justify-start">
+                    <div class="chat-bubble-ai max-w-lg p-3 rounded-lg shadow">
+                        <p>안녕하세요! JUVERA 매출 분석 AI입니다. 먼저 Google Sheets 데이터를 연결해주세요. 데이터가 준비되면 무엇이든 물어보세요.</p>
+                    </div>
+                </div>
+                <!-- 채팅 메시지가 여기에 추가됩니다 -->
+            </div>
+
+            <!-- 2-2. 로딩 인디케이터 -->
+            <div id="loading-indicator" class="hidden p-6 text-center">
+                <div class="inline-flex items-center">
+                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span class="text-gray-600">답변을 생성 중입니다...</span>
+                </div>
+            </div>
+
+            <!-- 2-3. 채팅 입력창 -->
+            <div class="border-t border-gray-200 p-4 bg-white">
+                <div class="flex space-x-3">
+                    <input type="text" id="chat-input" class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="데이터가 준비되면 질문을 입력하세요..." disabled>
+                    <button id="send-button" class="bg-blue-600 text-white font-semibold px-5 py-2 rounded-lg shadow hover:bg-blue-700 transition duration-300 disabled:bg-gray-400" disabled>
+                        전송
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- 1. 설정 변수 (중요!) ---
+        //
+        // ⬇️ ⬇️ ⬇️  여기에 대표님이 발급받은 3개의 키를 붙여넣으세요 ⬇️ ⬇️ ⬇️
+        //
+        // TODO: Google Cloud Console에서 발급받은 'API 키'와 '클라이언트 ID'를 입력하세요.
+        // 또한 'Google Sheets API'와 'Gemini API'를 활성화해야 합니다.
+
+        // 1. Google API 키 (Google Cloud Console에서 'API 키'로 생성한 값)
+        // 🚨🚨🚨 오류 발생! 🚨🚨🚨
+        // [오후 03:03:58] API key not valid
+        // 이 오류는 아래의 GOOGLE_API_KEY 값이 유효하지 않기 때문에 발생했습니다.
+        // Google Cloud Console에서 발급받은 'API 키' (AIzaSy... 로 시작하는 값)를
+        // 아래 대괄호와 따옴표 안에 정확히 붙여넣어 주세요.
+        const GOOGLE_API_KEY = "[AIzaSyCZkrtMHiPoMqjnz8v48iM3iyrqQP8TFA4]";
+
+        // 2. Google 클라이언트 ID (Google Cloud Console에서 '웹 애플리케이션' 유형으로 생성한 '클라이언트 ID')
+        // 🚨 이 값도 비어있습니다. '웹 클라이언트 1'의 ID (1234... 로 시작하는 값)를 넣어주세요.
+        const GOOGLE_CLIENT_ID = "[123418830267-1qus5o2ko22j4be9sre5elo5ldilmm5k.apps.googleusercontent.com]";
+        
+        // 3. Gemini API 키 (Google AI Studio에서 'Get API key'로 생성한 값)
+        // (Google Cloud의 Vertex AI Gemini API를 사용한다면 GOOGLE_API_KEY와 동일할 수 있습니다)
+        // 🚨 이 값도 비어있습니다. Google AI Studio에서 발급받은 키를 넣어주세요.
+        const GEMINI_API_KEY = "[AIzaSyCksneX9qmrw_ytKxa4cxP7f2YoWrr5rm4]";
+
+        // ⬆️ ⬆️ ⬆️  여기까지 3개의 키를 모두 입력했는지 확인해주세요 ⬆️ ⬆️ ⬆️
+        //
+
+        // Google API 스코프 (Google Sheets 읽기 전용)
+        const SCOPES = "https://www.googleapis.com/auth/spreadsheets.readonly";
+
+        // --- 2. 전역 변수 ---
+        let tokenClient;
+        let gapiInited = false;
+        let gisInited = false;
+        let sheetData = null; // 불러온 시트 데이터를 저장 (CSV 문자열 형식)
+        let sheetHeaders = []; // 시트의 헤더(컬럼명) 저장
+
+        // --- 3. UI 요소 ---
+        const authorizeButton = document.getElementById("authorize_button");
+        const signoutButton = document.getElementById("signout_button");
+        const dataSection = document.getElementById("data-section");
+        const fetchButton = document.getElementById("fetch_button");
+        const statusMessage = document.getElementById("status-message");
+        const chatInput = document.getElementById("chat-input");
+        const sendButton = document.getElementById("send-button");
+        const chatWindow = document.getElementById("chat-window");
+        const loadingIndicator = document.getElementById("loading-indicator");
+        const sheetIdInput = document.getElementById("sheet-id");
+        const sheetRangeInput = document.getElementById("sheet-range");
+
+        // --- 4. Google API 초기화 ---
+
+        // 페이지 로드 시 Google API 스크립트 로드 시작
+        window.onload = () => {
+            gapi.load('client', initializeGapiClient);
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: GOOGLE_CLIENT_ID,
+                scope: SCOPES,
+                callback: '', // 콜백은 요청 시 동적으로 설정
+            });
+            gisInited = true;
+            checkAuthButtonStatus();
+        };
+
+        async function initializeGapiClient() {
+            await gapi.client.init({
+                apiKey: GOOGLE_API_KEY,
+                discoveryDocs: ["https://sheets.googleapis.com/$discovery/rest?version=v4"],
+            });
+            gapiInited = true;
+            checkAuthButtonStatus();
+        }
+
+        function checkAuthButtonStatus() {
+            if (gapiInited && gisInited) {
+                authorizeButton.disabled = false;
+            }
+        }
+
+        // --- 5. 인증 로직 ---
+        authorizeButton.onclick = handleAuthClick;
+        signoutButton.onclick = handleSignoutClick;
+
+        function handleAuthClick() {
+            tokenClient.callback = (resp) => {
+                if (resp.error) {
+                    throw (resp);
+                }
+                updateSigninStatus(true);
+            };
+
+            if (gapi.client.getToken() === null) {
+                tokenClient.requestAccessToken({ prompt: 'consent' });
+            } else {
+                tokenClient.requestAccessToken({ prompt: '' });
+            }
+        }
+
+        function handleSignoutClick() {
+            const token = gapi.client.getToken();
+            if (token !== null) {
+                google.accounts.oauth2.revoke(token.access_token, () => {
+                    gapi.client.setToken(null);
+                    updateSigninStatus(false);
+                });
+            }
+        }
+
+        function updateSigninStatus(isSignedIn) {
+            if (isSignedIn) {
+                authorizeButton.classList.add("hidden");
+                signoutButton.classList.remove("hidden");
+                dataSection.classList.remove("hidden");
+                statusMessage.innerHTML = '<p class="text-green-600 font-medium">Google 계정 인증 완료!</p><p>이제 Sheet 정보를 입력하고 데이터를 불러오세요.</p>';
+            } else {
+                authorizeButton.classList.remove("hidden");
+                signoutButton.classList.add("hidden");
+                dataSection.classList.add("hidden");
+                chatInput.disabled = true;
+                sendButton.disabled = true;
+                sheetData = null;
+                sheetHeaders = [];
+                statusMessage.innerHTML = "<p>Google 계정으로 로그인해주세요.</p>";
+                addMessageToChat("AI", "Google 계정 로그아웃되었습니다. 다시 연결해주세요.");
+            }
+        }
+
+        // --- 6. Google Sheets 데이터 불러오기 ---
+        fetchButton.onclick = loadSheetData;
+
+        async function loadSheetData() {
+            const sheetId = sheetIdInput.value.trim();
+            let range = sheetRangeInput.value.trim();
+
+            if (!sheetId) {
+                statusMessage.innerHTML = '<p class="text-red-600 font-medium">Sheet ID를 입력해주세요.</p>';
+                return;
+            }
+            if (!range) {
+                range = "Sheet1"; // 기본 시트 이름
+            }
+
+            statusMessage.innerHTML = '<p class="text-blue-600">데이터를 불러오는 중입니다...</p>';
+
+            try {
+                const response = await gapi.client.sheets.spreadsheets.values.get({
+                    spreadsheetId: sheetId,
+                    range: range,
+                });
+
+                const values = response.result.values;
+
+                if (values && values.length > 0) {
+                    // 데이터를 CSV 문자열로 변환
+                    sheetData = values.map(row => 
+                        row.map(cell => {
+                            // 셀 내용에 쉼표나 따옴표가 있으면 이스케이프 처리
+                            let newCell = cell.toString();
+                            if (newCell.includes(",")) {
+                                newCell = `"${newCell}"`;
+                            }
+                            return newCell;
+                        }).join(",")
+                    ).join("\n");
+                    
+                    sheetHeaders = values[0]; // 첫 번째 행을 헤더로 저장
+
+                    statusMessage.innerHTML = `<p class="text-green-600 font-medium">데이터 준비 완료!</p><p>${values.length}개 행, ${sheetHeaders.length}개 컬럼이 로드되었습니다.</p>`;
+                    chatInput.disabled = false;
+                    sendButton.disabled = false;
+                    addMessageToChat("AI", `데이터 로드 완료! <strong>'${range}'</strong> 시트에서 총 ${values.length}개의 행을 불러왔습니다. 이제 질문을 시작하세요.`);
+                    
+                    // 헤더 정보(컬럼명)를 AI에게 알려주면 더 좋습니다.
+                    addMessageToChat("AI", `분석 가능한 컬럼: ${sheetHeaders.join(', ')}`);
+
+                } else {
+                    statusMessage.innerHTML = '<p class="text-red-600 font-medium">데이터를 찾을 수 없습니다.</p><p>시트 ID와 이름을 확인해주세요.</p>';
+                    sheetData = null;
+                    sheetHeaders = [];
+                }
+            } catch (err) {
+                console.error("Execute error", err);
+                statusMessage.innerHTML = `<p class="text-red-600 font-medium">오류 발생:</p><p class="text-xs">${err.result.error.message}</p>`;
+                sheetData = null;
+                sheetHeaders = [];
+            }
+        }
+
+        // --- 7. 채팅 로직 ---
+        sendButton.onclick = handleSendMessage;
+        chatInput.onkeydown = (e) => {
+            if (e.key === 'Enter' && !chatInput.disabled) {
+                handleSendMessage();
+            }
+        };
+
+        function handleSendMessage() {
+            const userQuery = chatInput.value.trim();
+            if (!userQuery) return;
+            
+            if (!sheetData) {
+                addMessageToChat("AI", "먼저 Google Sheets 데이터를 불러와주세요.");
+                return;
+            }
+
+            addMessageToChat("user", userQuery);
+            chatInput.value = "";
+            loadingIndicator.classList.remove("hidden");
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+
+            // Gemini API 호출
+            callGeminiAPI(userQuery);
+        }
+
+        function addMessageToChat(sender, message) {
+            const bubble = document.createElement("div");
+            bubble.classList.add("flex");
+
+            if (sender === "user") {
+                bubble.classList.add("justify-end");
+                bubble.innerHTML = `<div class="chat-bubble-user max-w-lg p-3 rounded-lg shadow"><p>${message}</p></div>`;
+            } else {
+                bubble.classList.add("justify-start");
+                bubble.innerHTML = `<div class="chat-bubble-ai max-w-lg p-3 rounded-lg shadow"><p>${message}</p></div>`;
+            }
+            
+            chatWindow.appendChild(bubble);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+
+        // --- 8. Gemini API 호출 (Exponential Backoff 포함) ---
+        
+        async function callGeminiAPI(userQuery, retryCount = 0, maxRetries = 5, baseDelay = 1000) {
+            
+            const systemPrompt = `당신은 'JUVERA'라는 화장품 브랜드를 위한 전문 데이터 분석가입니다.
+당신의 임무는 아래에 제공되는 CSV 형식의 매출 데이터를 기반으로 사용자의 질문에 답변하는 것입니다.
+
+[규칙]
+1.  답변은 항상 한국어로, 간결하고 명확하게 제공해주세요.
+2.  데이터를 기반으로 한 사실만을 말해야 합니다. 추측이나 데이터에 없는 정보는 답변하지 마세요.
+3.  질문에 대한 답을 데이터에서 찾을 수 없는 경우, "데이터에서 해당 정보를 찾을 수 없습니다."라고 정중하게 말해주세요.
+4.  숫자 데이터(매출, 수량 등)를 언급할 때는 단위를 명확히 하고, 천 단위 콤마(,)를 찍어주세요.
+5.  계산이 필요한 경우 (예: "총 매출", "평균 판매가"), 계산을 수행하고 그 결과를 답변하세요.
+6.  컬럼(헤더) 정보는 다음과 같습니다: ${sheetHeaders.join(', ')}
+
+이제, 아래의 데이터와 질문을 바탕으로 답변을 생성해주세요.
+`;
+
+            const fullPrompt = `${systemPrompt}\n[데이터 (CSV 형식)]\n${sheetData}\n\n[사용자 질문]\n${userQuery}`;
+            
+            const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
+
+            const payload = {
+                contents: [{ 
+                    parts: [{ text: fullPrompt }] 
+                }],
+                // systemInstruction: { 
+                //     parts: [{ text: systemPrompt }] 
+                // } // systemInstruction이 더 나을 수 있으나, flash 모델은 contents에 함께 넣는 것이 안정적일 수 있습니다.
+            };
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    // API 에러 (예: 429 Too Many Requests)
+                    if (response.status === 429 && retryCount < maxRetries) {
+                        const delay = baseDelay * Math.pow(2, retryCount) + Math.random() * 1000;
+                        console.warn(`Rate limit. Retrying in ${delay}ms... (Attempt ${retryCount + 1})`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        return callGeminiAPI(userQuery, retryCount + 1);
+                    }
+                    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                
+                let aiResponse = "죄송합니다. 답변을 생성하는 데 실패했습니다.";
+                if (result.candidates && result.candidates[0].content && result.candidates[0].content.parts[0].text) {
+                    aiResponse = result.candidates[0].content.parts[0].text;
+                } else if (result.promptFeedback && result.promptFeedback.blockReason) {
+                     aiResponse = `답변이 차단되었습니다. (사유: ${result.promptFeedback.blockReason})`;
+                }
+
+                loadingIndicator.classList.add("hidden");
+                addMessageToChat("AI", aiResponse.replace(/\n/g, '<br>')); // 줄바꿈 처리
+
+            } catch (error) {
+                console.error("Gemini API call failed:", error);
+                
+                // 재시도 로직 (네트워크 에러 등)
+                if (retryCount < maxRetries) {
+                    const delay = baseDelay * Math.pow(2, retryCount) + Math.random() * 1000;
+                    console.warn(`Network error. Retrying in ${delay}ms... (Attempt ${retryCount + 1})`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    return callGeminiAPI(userQuery, retryCount + 1);
+                }
+
+                loadingIndicator.classList.add("hidden");
+                addMessageToChat("AI", `죄송합니다. API 호출 중 오류가 발생했습니다: ${error.message}`);
+            }
+        }
+
+    </script>
+</body>
+</html>
+
